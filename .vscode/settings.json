@@ -1,0 +1,7 @@
+{
+  "rust-analyzer.rustupPath": "C:\\Users\\zhang\\.cargo\\bin\\rustup.exe",
+  "rust-analyzer.rustcSource": "discover"
+  ,"rust-analyzer.server.extraEnv": {
+    "PATH": "C:\\Users\\zhang\\.cargo\\bin;%PATH%"
+  }
+}

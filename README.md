@@ -53,12 +53,12 @@
 
 在项目根目录执行：
 ```powershell
-cargo run --release
+cargo run --bin gm_tools --release
 ```
 
 或调试运行（开发模式）：
 ```powershell
-cargo run
+cargo run --bin gm_tools
 ```
 
 如果想仅构建二进制：
@@ -70,6 +70,10 @@ cargo build --release
 - rust-analyzer：需要安装 `rust-src` 组件并确保 `rustup` 在 PATH 中。为方便开发，本仓库新增了工作区设置（`.vscode/settings.json`），指定 `rust-analyzer.rustupPath` 并在服务器环境中优先使用 `C:\\Users\\zhang\\.cargo\\bin`。如果你复制仓库到其他机器，请把 `rustupPath` 调整为你的路径或在 Settings 中使用自动发现。
 - `libsm` 兼容性：某些版本的 `libsm` 在处理短输入（例如 SM2 加密长度 < 32 字节）时存在 panic 或异常行为。当前实现对加密端做了最小填充以避免崩溃，但这只是工具层面的兼容性处理——生产环境请改用稳定库或在上层保证输入长度与格式。
 - 私钥/公钥的导入：当前 UI 实现更依赖于内部生成的键对（`cached_pk` / `cached_sk`），对外部导入公钥对象支持有限（仅接受 Hex 公钥字符串作为 `04||X||Y`），导入时请确保格式正确。
+
+## 性能说明
+- SM2 密钥生成：已做一次轻量优化，复用 `SigCtx` 并减少生成过程中的不必要拷贝，以降低每次点击“生成新密钥对”的额外开销。
+- 如果你后续希望进一步提升“体感速度”（避免 UI 卡顿），建议将密钥生成放到后台线程并在 UI 上显示“生成中…”。
 
 ## 测试
 - 可以运行 `cargo run --bin test_crash` / `cargo run --bin test_decrypt` 来执行仓库中提供的示例二进制（用于复现/测试某些 edge-case）。

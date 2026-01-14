@@ -70,12 +70,24 @@ fn setup_custom_fonts(ctx: &egui::Context) {
     }
 }
 
-#[derive(Default)]
 struct GmApp {
     selected_tab: Tab,
     sm3_state: Sm3State,
     sm4_state: Sm4State,
     sm2_state: Sm2State,
+    sm2_ctx: SigCtx,
+}
+
+impl Default for GmApp {
+    fn default() -> Self {
+        Self {
+            selected_tab: Tab::default(),
+            sm3_state: Sm3State::default(),
+            sm4_state: Sm4State::default(),
+            sm2_state: Sm2State::default(),
+            sm2_ctx: SigCtx::new(),
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Default)]
@@ -219,21 +231,20 @@ impl GmApp {
 
 
     fn process_sm2_genkey(&mut self) {
-        let ctx = SigCtx::new();
+        let ctx = &self.sm2_ctx;
         match ctx.new_keypair() {
             Ok((pk, sk)) => {
                 self.sm2_state.pri_key = sk.to_str_radix(16);
-                
-                // Cache keys
-                self.sm2_state.cached_sk = Some(sk.clone());
-                self.sm2_state.cached_pk = Some(pk.clone());
-
                 let x = pk.x.to_str(16);
                 let y = pk.y.to_str(16);
                 
                 let x_pad = format!("{:0>64}", x);
                 let y_pad = format!("{:0>64}", y);
                 self.sm2_state.pub_key = format!("04{}{}", x_pad, y_pad);
+
+                // Cache keys (move, avoid clone)
+                self.sm2_state.cached_sk = Some(sk);
+                self.sm2_state.cached_pk = Some(pk);
                 self.sm2_state.output = "密钥生成成功".to_string();
             }
 
@@ -245,7 +256,7 @@ impl GmApp {
 
 
     fn process_sm2_action(&mut self) {
-        let ctx = SigCtx::new();
+        let ctx = &self.sm2_ctx;
         match self.sm2_state.mode {
             Sm2Mode::GenKey => {},
             Sm2Mode::Sign => {

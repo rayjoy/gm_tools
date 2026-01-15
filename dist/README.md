@@ -9,10 +9,13 @@
 - SM3：对任意 UTF-8 字符串计算 SM3 摘要，输出 Hex 编码。
 - SM4：支持 ECB/CBC 两种模式的加密/解密，使用 PKCS#7 填充，Key/IV 使用 Hex 编码输入。
 - SM2：支持密钥生成、签名、验签、加密、解密。对某些第三方库（libsm）短输入存在兼容处理与安全提示。
+- ZUC：支持祖冲之序列密码算法。
+    - **ZUC-128**：128位密钥，128位初始向量。
+    - **ZUC-256**：256位密钥，184位(23字节)初始向量。
 
 ## 项目结构
 - `Cargo.toml`：依赖与元信息。
-- `src/main.rs`：主程序，基于 `eframe/egui` 实现 GUI，包含三大功能模块和 UI 逻辑。
+- `src/main.rs`：主程序，基于 `eframe/egui` 实现 GUI，包含四大功能模块（SM3/SM4/SM2/ZUC）和 UI 逻辑。
 - `src/check_libsm.rs`：用于快速检测 `libsm` 能否成功初始化的最小程序（测试用途）。
 - `src/bin/*`：包含两个示例二进制 `test_crash.rs`、`test_decrypt.rs`（作为附加测试/示例）。
 - `.vscode/settings.json`：本次为方便开发/IDE 调试创建的工作区配置（rust-analyzer 相关）。
@@ -22,8 +25,8 @@
 ## 设计说明（模块/流程）
 
 1) GUI 层（`src/main.rs`）
-- 使用 `eframe::egui` 创建单窗口应用，分为三张 Tab：`SM3` / `SM4` / `SM2`。
-- 每张 Tab 管理独立的状态结构体（`Sm3State`、`Sm4State`、`Sm2State`），保存输入、输出与模式选择。
+- 使用 `eframe::egui` 创建单窗口应用，分为四张 Tab：`SM3` / `SM4` / `SM2` / `ZUC`。
+- 每张 Tab 管理独立的状态结构体（`Sm3State`、`Sm4State`、`Sm2State`、`ZucState`），保存输入、输出与模式选择。
 - 所有交互（按钮点击）在 UI 层触发对应 `process_*` 方法完成具体计算并把结果写回状态，UI 即时展示结果。
 
 2) SM3 子系统
@@ -42,9 +45,14 @@
   - 对于加密，若输入小于 32 字节会做 PKCS#7-like 填充以避免 libsm 某版本 panic（并在输出中提示）。
   - 对于解密，先尝试常规 C1C3C2 格式，若失败会尝试把 C1C2C3 格式转换为 C1C3C2 再解密，并做 PKCS#7 去填充尝试。
 
+5) ZUC 子系统
+- 使用 `zuc` crate (v0.4.1+)。
+- 支持 **ZUC-128** 与 **ZUC-256** 两种模式。
+- 作为序列密码，加密与解密运算逻辑相同（异或密钥流）。UI 上提供了独立按钮以便于理解。
+
 ## 依赖（关键）
 - `eframe` / `egui`：GUI。
-- `sm3`、`sm4`：国密对称算法实现。
+- `sm3`、`sm4`、`zuc`：国密算法（摘要/对称/序列）实现。
 - `libsm`：SM2（签名/加解密）的实现。
 - `libsm` 的具体版本可能影响对短消息或某些格式的处理（见已知问题）。
 
@@ -65,6 +73,13 @@ cargo run --bin gm_tools
 ```powershell
 cargo build --release
 ```
+
+## 变更日志
+详见根目录 `CHANGELOG.md`，本次修复与打包记录已更新。
+
+## 发布与打包
+- release 二进制位于 `target/release/gm_tools.exe`。
+- 可分发包位于 `dist/gm_tools-windows-x86_64.zip`（包含 `gm_tools.exe` 与 `README.md`）。
 
 ## 开发注意与已知问题
 - rust-analyzer：需要安装 `rust-src` 组件并确保 `rustup` 在 PATH 中。为方便开发，本仓库新增了工作区设置（`.vscode/settings.json`），指定 `rust-analyzer.rustupPath` 并在服务器环境中优先使用 `C:\\Users\\zhang\\.cargo\\bin`。如果你复制仓库到其他机器，请把 `rustupPath` 调整为你的路径或在 Settings 中使用自动发现。

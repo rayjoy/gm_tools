@@ -153,6 +153,7 @@ struct Sm4State {
     data: String,
     output: String,
     mode: Sm4Mode,
+    padding: bool,
 }
 
 impl Default for Sm4State {
@@ -164,6 +165,7 @@ impl Default for Sm4State {
             data: String::new(),
             output: String::new(),
             mode: Sm4Mode::CBC,
+            padding: true,
         }
     }
 }
@@ -524,6 +526,10 @@ impl GmApp {
         ui.label("数据 (Hex encoded):");
         ui.text_edit_multiline(&mut self.sm4_state.data);
 
+        if self.sm4_state.mode != Sm4Mode::GCM {
+            ui.checkbox(&mut self.sm4_state.padding, "启用 PKCS#7 填充 (Padding)");
+        }
+
         ui.horizontal(|ui| {
             if ui.button("加密").clicked() {
                 self.process_sm4_action(true);
@@ -625,16 +631,23 @@ impl GmApp {
     ) -> Result<Vec<u8>, String> {
         let key_arr = GenericArray::clone_from_slice(key);
         let cipher = Sm4::new(&key_arr);
+        let block_size = 16;
+        let use_padding = self.sm4_state.padding;
 
         if encrypt {
-            // Padding (PKCS7)
-            let block_size = 16;
-            let padding_len = block_size - (data.len() % block_size);
-            let mut padded_data = data.to_vec();
-            padded_data.extend(std::iter::repeat(padding_len as u8).take(padding_len));
+            let mut input_data = data.to_vec();
+            if use_padding {
+                // Padding (PKCS7)
+                let padding_len = block_size - (input_data.len() % block_size);
+                input_data.extend(std::iter::repeat(padding_len as u8).take(padding_len));
+            } else {
+                if input_data.len() % block_size != 0 {
+                    return Err(format!("未启用填充时，输入数据长度必须是 {} 的倍数", block_size));
+                }
+            }
 
-            let mut output = Vec::with_capacity(padded_data.len());
-            let blocks = padded_data.chunks_exact(block_size);
+            let mut output = Vec::with_capacity(input_data.len());
+            let blocks = input_data.chunks_exact(block_size);
 
             if let Some(mut current_iv) = iv.map(|v| GenericArray::clone_from_slice(v)) {
                 // CBC Encrypt
@@ -659,12 +672,12 @@ impl GmApp {
             Ok(output)
         } else {
             // Decrypt
-            if data.len() % 16 != 0 {
-                return Err("解密数据长度必须是 16 的倍数".to_string());
+            if data.len() % block_size != 0 {
+                return Err(format!("解密数据长度必须是 {} 的倍数", block_size));
             }
 
             let mut output = Vec::with_capacity(data.len());
-            let blocks = data.chunks_exact(16);
+            let blocks = data.chunks_exact(block_size);
 
             if let Some(initial_iv) = iv.map(|v| GenericArray::clone_from_slice(v)) {
                 // CBC Decrypt
@@ -690,28 +703,32 @@ impl GmApp {
                 }
             }
 
-            // Unpad (PKCS7)
-            if let Some(&pad) = output.last() {
-                let pad_len = pad as usize;
-                if pad_len > 0 && pad_len <= 16 && output.len() >= pad_len {
-                    // Start of padding
-                    let pad_start = output.len() - pad_len;
-                    // Check if all padding bytes are correct
-                    let is_padding_valid = output[pad_start..].iter().all(|&b| b == pad);
-                    if is_padding_valid {
-                        output.truncate(pad_start);
-                        Ok(output)
+            if use_padding {
+                // Unpad (PKCS7)
+                if let Some(&pad) = output.last() {
+                    let pad_len = pad as usize;
+                    if pad_len > 0 && pad_len <= block_size && output.len() >= pad_len {
+                        // Start of padding
+                        let pad_start = output.len() - pad_len;
+                        // Check if all padding bytes are correct
+                        let is_padding_valid = output[pad_start..].iter().all(|&b| b == pad);
+                        if is_padding_valid {
+                            output.truncate(pad_start);
+                            Ok(output)
+                        } else {
+                            // Keep raw if padding invalid? Or Error?
+                            // For a tool, usually we might show raw or error.
+                            // Let's return error to be safe.
+                            Err("Padding 校验失败 (PKCS7)".to_string())
+                        }
                     } else {
-                        // Keep raw if padding invalid? Or Error?
-                        // For a tool, usually we might show raw or error.
-                        // Let's return error to be safe.
-                        Err("Padding 校验失败 (PKCS7)".to_string())
+                        Err("无效的 Padding 长度".to_string())
                     }
                 } else {
-                    Err("无效的 Padding 长度".to_string())
+                    Ok(output) // empty
                 }
             } else {
-                Ok(output) // empty
+                Ok(output)
             }
         }
     }

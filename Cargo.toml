@@ -1,6 +1,6 @@
 [package]
 name = "gm_tools"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 
 [dependencies]
@@ -16,6 +16,7 @@ rand = "0.9.2"
 num-traits = "0.2.19"
 num-bigint = "0.4.6"
 zuc = "0.4.1"
+sm4-gcm = "0.1.2"
 
 [profile.release]
 opt-level = "z"

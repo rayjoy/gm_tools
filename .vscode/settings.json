@@ -3,5 +3,15 @@
   "rust-analyzer.rustcSource": "discover"
   ,"rust-analyzer.server.extraEnv": {
     "PATH": "C:\\Users\\zhang\\.cargo\\bin;%PATH%"
+  },
+  "chat.tools.terminal.autoApprove": {
+    "cargo add": true,
+    "cargo search": true,
+    "cargo remove": true,
+    "cargo check": true,
+    "cargo test": true,
+    "dir": true,
+    "cargo clean": true,
+    "cargo fix": true
   }
 }

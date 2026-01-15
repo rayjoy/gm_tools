@@ -4,6 +4,7 @@ use eframe::egui;
 use sm3::{Sm3, Digest};
 use sm4::cipher::{NewBlockCipher, BlockEncrypt, BlockDecrypt, generic_array::GenericArray};
 use sm4::Sm4;
+use zuc::zuc128::zuc128_xor_inplace;
 use num_traits::Num;
 use num_bigint::BigUint;
 use libsm::sm2::signature::{SigCtx, Signature};
@@ -77,6 +78,7 @@ struct GmApp {
     sm3_state: Sm3State,
     sm4_state: Sm4State,
     sm2_state: Sm2State,
+    zuc_state: ZucState,
     sm2_ctx: SigCtx,
 }
 
@@ -87,6 +89,7 @@ impl Default for GmApp {
             sm3_state: Sm3State::default(),
             sm4_state: Sm4State::default(),
             sm2_state: Sm2State::default(),
+            zuc_state: ZucState::default(),
             sm2_ctx: SigCtx::new(),
         }
     }
@@ -98,8 +101,17 @@ enum Tab {
     SM3,
     SM4,
     SM2,
+    ZUC,
 }
 
+
+#[derive(Default)]
+struct ZucState {
+    key: String,
+    iv: String,
+    input: String,
+    output: String,
+}
 
 #[derive(Default)]
 struct Sm3State {
@@ -162,6 +174,7 @@ impl eframe::App for GmApp {
                 ui.selectable_value(&mut self.selected_tab, Tab::SM3, "SM3 摘要");
                 ui.selectable_value(&mut self.selected_tab, Tab::SM4, "SM4 加解密");
                 ui.selectable_value(&mut self.selected_tab, Tab::SM2, "SM2 非对称");
+                ui.selectable_value(&mut self.selected_tab, Tab::ZUC, "ZUC 序列密码");
             });
             ui.separator();
 
@@ -169,6 +182,7 @@ impl eframe::App for GmApp {
                 Tab::SM3 => self.show_sm3(ui),
                 Tab::SM4 => self.show_sm4(ui),
                 Tab::SM2 => self.show_sm2(ui),
+                Tab::ZUC => self.show_zuc(ui),
             }
         });
     }
@@ -629,6 +643,69 @@ impl GmApp {
                 Ok(output) // empty
             }
         }
+    }
+
+    fn show_zuc(&mut self, ui: &mut egui::Ui) {
+        ui.heading("ZUC 祖冲之序列密码 (128-bit)");
+        ui.separator();
+
+        ui.label("Key (16 bytes, Hex):");
+        ui.text_edit_singleline(&mut self.zuc_state.key);
+
+        ui.label("IV (16 bytes, Hex):");
+        ui.text_edit_singleline(&mut self.zuc_state.iv);
+
+        ui.label("输入数据 (Hex):");
+        ui.text_edit_multiline(&mut self.zuc_state.input);
+
+        ui.horizontal(|ui| {
+            if ui.button("加密 / 解密").clicked() {
+                self.process_zuc();
+            }
+        });
+
+        ui.label("输出结果 (Hex):");
+        ui.text_edit_multiline(&mut self.zuc_state.output);
+    }
+
+    fn process_zuc(&mut self) {
+        let key_bytes = match hex::decode(&self.zuc_state.key) {
+            Ok(k) if k.len() == 16 => k,
+            _ => {
+                self.zuc_state.output = "错误: Key 必须是 16 字节 (32 hex characters)".to_string();
+                return;
+            }
+        };
+
+        let iv_bytes = match hex::decode(&self.zuc_state.iv) {
+            Ok(v) if v.len() == 16 => v,
+            _ => {
+                self.zuc_state.output = "错误: IV 必须是 16 字节 (32 hex characters)".to_string();
+                return;
+            }
+        };
+
+        let mut data_bytes = match hex::decode(&self.zuc_state.input) {
+            Ok(d) => d,
+            Err(_) => {
+                self.zuc_state.output = "错误: 数据必须是合法的 Hex 字符串".to_string();
+                return;
+            }
+        };
+
+        // ZUC implementation usage
+        let mut key_arr = [0u8; 16];
+        key_arr.copy_from_slice(&key_bytes);
+        
+        let mut iv_arr = [0u8; 16];
+        iv_arr.copy_from_slice(&iv_bytes);
+
+        // bitlen is usually bytes * 8 for full byte streams
+        let bitlen = data_bytes.len() * 8;
+
+        zuc128_xor_inplace(&key_arr, &iv_arr, &mut data_bytes, bitlen);
+
+        self.zuc_state.output = hex::encode(data_bytes);
     }
 }
 

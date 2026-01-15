@@ -66,6 +66,13 @@ cargo run --bin gm_tools
 cargo build --release
 ```
 
+## 变更日志
+详见根目录 `CHANGELOG.md`，本次修复与打包记录已更新。
+
+## 发布与打包
+- release 二进制位于 `target/release/gm_tools.exe`。
+- 可分发包位于 `dist/gm_tools-windows-x86_64.zip`（包含 `gm_tools.exe` 与 `README.md`）。
+
 ## 开发注意与已知问题
 - rust-analyzer：需要安装 `rust-src` 组件并确保 `rustup` 在 PATH 中。为方便开发，本仓库新增了工作区设置（`.vscode/settings.json`），指定 `rust-analyzer.rustupPath` 并在服务器环境中优先使用 `C:\\Users\\zhang\\.cargo\\bin`。如果你复制仓库到其他机器，请把 `rustupPath` 调整为你的路径或在 Settings 中使用自动发现。
 - `libsm` 兼容性：某些版本的 `libsm` 在处理短输入（例如 SM2 加密长度 < 32 字节）时存在 panic 或异常行为。当前实现对加密端做了最小填充以避免崩溃，但这只是工具层面的兼容性处理——生产环境请改用稳定库或在上层保证输入长度与格式。

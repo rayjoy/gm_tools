@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use eframe::egui;
 use sm3::{Sm3, Digest};
 use sm4::cipher::{NewBlockCipher, BlockEncrypt, BlockDecrypt, generic_array::GenericArray};

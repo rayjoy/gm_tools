@@ -5,6 +5,9 @@ use sm3::{Sm3, Digest};
 use sm4::cipher::{NewBlockCipher, BlockEncrypt, BlockDecrypt, generic_array::GenericArray};
 use sm4::Sm4;
 use zuc::zuc128::zuc128_xor_inplace;
+use zuc::zuc256::Zuc256StreamCipher;
+use zuc::cipher::{KeyIvInit, StreamCipher};
+// use zuc::cipher::generic_array::GenericArray; // Defined above via sm4::cipher
 use num_traits::Num;
 use num_bigint::BigUint;
 use libsm::sm2::signature::{SigCtx, Signature};
@@ -111,6 +114,7 @@ struct ZucState {
     iv: String,
     input: String,
     output: String,
+    use_256: bool,
 }
 
 #[derive(Default)]
@@ -646,22 +650,39 @@ impl GmApp {
     }
 
     fn show_zuc(&mut self, ui: &mut egui::Ui) {
-        ui.heading("ZUC 祖冲之序列密码 (128-bit)");
+        ui.heading("ZUC 祖冲之序列密码");
         ui.separator();
 
-        ui.label("Key (16 bytes, Hex):");
+        ui.horizontal(|ui| {
+            ui.label("算法版本:");
+            ui.radio_value(&mut self.zuc_state.use_256, false, "ZUC-128");
+            ui.radio_value(&mut self.zuc_state.use_256, true, "ZUC-256");
+        });
+
+        let (key_len, iv_len) = if self.zuc_state.use_256 {
+            (32, 23)
+        } else {
+            (16, 16)
+        };
+
+        ui.label(format!("Key ({} bytes, Hex):", key_len));
         ui.text_edit_singleline(&mut self.zuc_state.key);
 
-        ui.label("IV (16 bytes, Hex):");
+        ui.label(format!("IV ({} bytes, Hex):", iv_len));
         ui.text_edit_singleline(&mut self.zuc_state.iv);
 
         ui.label("输入数据 (Hex):");
         ui.text_edit_multiline(&mut self.zuc_state.input);
 
         ui.horizontal(|ui| {
-            if ui.button("加密 / 解密").clicked() {
+            if ui.button("加密").clicked() {
                 self.process_zuc();
             }
+            if ui.button("解密").clicked() {
+                self.process_zuc();
+            }
+            // ZUC is symmetric stream cipher, Encrypt/Decrypt are same operation.
+            // Separate buttons requested for UX.
         });
 
         ui.label("输出结果 (Hex):");
@@ -669,18 +690,24 @@ impl GmApp {
     }
 
     fn process_zuc(&mut self) {
+        let (key_len, iv_len) = if self.zuc_state.use_256 {
+            (32, 23)
+        } else {
+            (16, 16)
+        };
+
         let key_bytes = match hex::decode(&self.zuc_state.key) {
-            Ok(k) if k.len() == 16 => k,
+            Ok(k) if k.len() == key_len => k,
             _ => {
-                self.zuc_state.output = "错误: Key 必须是 16 字节 (32 hex characters)".to_string();
+                self.zuc_state.output = format!("错误: Key 必须是 {} 字节 ({} hex characters)", key_len, key_len * 2);
                 return;
             }
         };
 
         let iv_bytes = match hex::decode(&self.zuc_state.iv) {
-            Ok(v) if v.len() == 16 => v,
+            Ok(v) if v.len() == iv_len => v,
             _ => {
-                self.zuc_state.output = "错误: IV 必须是 16 字节 (32 hex characters)".to_string();
+                self.zuc_state.output = format!("错误: IV 必须是 {} 字节 ({} hex characters)", iv_len, iv_len * 2);
                 return;
             }
         };
@@ -693,17 +720,26 @@ impl GmApp {
             }
         };
 
-        // ZUC implementation usage
-        let mut key_arr = [0u8; 16];
-        key_arr.copy_from_slice(&key_bytes);
-        
-        let mut iv_arr = [0u8; 16];
-        iv_arr.copy_from_slice(&iv_bytes);
-
-        // bitlen is usually bytes * 8 for full byte streams
-        let bitlen = data_bytes.len() * 8;
-
-        zuc128_xor_inplace(&key_arr, &iv_arr, &mut data_bytes, bitlen);
+        if self.zuc_state.use_256 {
+            // ZUC-256
+            let key_arr = GenericArray::from_slice(&key_bytes);
+            let iv_arr = GenericArray::from_slice(&iv_bytes);
+            
+            let mut cipher = Zuc256StreamCipher::new(key_arr, iv_arr);
+            cipher.apply_keystream(&mut data_bytes);
+        } else {
+             // ZUC-128 implementation usage
+            let mut key_arr = [0u8; 16];
+            key_arr.copy_from_slice(&key_bytes);
+            
+            let mut iv_arr = [0u8; 16];
+            iv_arr.copy_from_slice(&iv_bytes);
+    
+            // bitlen is usually bytes * 8 for full byte streams
+            let bitlen = data_bytes.len() * 8;
+    
+            zuc128_xor_inplace(&key_arr, &iv_arr, &mut data_bytes, bitlen);
+        }
 
         self.zuc_state.output = hex::encode(data_bytes);
     }

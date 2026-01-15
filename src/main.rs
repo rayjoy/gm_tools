@@ -683,6 +683,7 @@ impl GmApp {
             }
             // ZUC is symmetric stream cipher, Encrypt/Decrypt are same operation.
             // Separate buttons requested for UX.
+            // ZUC 是对称序列密码，加密解密运算相同。为提升 UX 提供了两个按钮。
         });
 
         ui.label("输出结果 (Hex):");

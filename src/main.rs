@@ -8,6 +8,8 @@ use sm4_gcm::{Sm4Key, sm4_gcm_aad_decrypt, sm4_gcm_aad_encrypt};
 use zuc::cipher::{KeyIvInit, StreamCipher};
 use zuc::zuc128::zuc128_xor_inplace;
 use zuc::zuc256::Zuc256StreamCipher;
+mod zuc256_new;
+use zuc256_new::{Zuc256NewStreamCipher, Zuc256Mode};
 // use zuc::cipher::generic_array::GenericArray; // Defined above via sm4::cipher
 use libsm::sm2::ecc::Point;
 use libsm::sm2::signature::{SigCtx, Signature};
@@ -108,6 +110,17 @@ struct ZucState {
     input: String,
     output: String,
     use_256: bool,
+    use_new_init: bool,
+    is_mac: bool,
+    mac_len: MacLen,
+}
+
+#[derive(PartialEq, Eq, Default, Clone, Copy, Debug)]
+enum MacLen {
+    #[default]
+    L32 = 32,
+    L64 = 64,
+    L128 = 128,
 }
 
 #[derive(Default)]
@@ -741,10 +754,29 @@ impl GmApp {
             ui.label("算法版本:");
             ui.radio_value(&mut self.zuc_state.use_256, false, "ZUC-128");
             ui.radio_value(&mut self.zuc_state.use_256, true, "ZUC-256");
+            if self.zuc_state.use_256 {
+                ui.checkbox(&mut self.zuc_state.use_new_init, "新初始化方案 (IV 128-bit)");
+            }
         });
 
+        if self.zuc_state.use_256 && self.zuc_state.use_new_init {
+             ui.horizontal(|ui| {
+                ui.label("模式:");
+                ui.radio_value(&mut self.zuc_state.is_mac, false, "加解密");
+                ui.radio_value(&mut self.zuc_state.is_mac, true, "MAC生成");
+            });
+            if self.zuc_state.is_mac {
+                ui.horizontal(|ui| {
+                    ui.label("MAC 长度:");
+                    ui.radio_value(&mut self.zuc_state.mac_len, MacLen::L32, "32-bit");
+                    ui.radio_value(&mut self.zuc_state.mac_len, MacLen::L64, "64-bit");
+                    ui.radio_value(&mut self.zuc_state.mac_len, MacLen::L128, "128-bit");
+                });
+            }
+        }
+
         let (key_len, iv_len) = if self.zuc_state.use_256 {
-            (32, 23)
+            if self.zuc_state.use_new_init { (32, 16) } else { (32, 23) }
         } else {
             (16, 16)
         };
@@ -759,15 +791,18 @@ impl GmApp {
         ui.text_edit_multiline(&mut self.zuc_state.input);
 
         ui.horizontal(|ui| {
-            if ui.button("加密").clicked() {
-                self.process_zuc();
+            if self.zuc_state.is_mac && self.zuc_state.use_256 && self.zuc_state.use_new_init {
+                if ui.button("生成 MAC").clicked() {
+                    self.process_zuc();
+                }
+            } else {
+                if ui.button("加密").clicked() {
+                    self.process_zuc();
+                }
+                if ui.button("解密").clicked() {
+                    self.process_zuc();
+                }
             }
-            if ui.button("解密").clicked() {
-                self.process_zuc();
-            }
-            // ZUC is symmetric stream cipher, Encrypt/Decrypt are same operation.
-            // Separate buttons requested for UX.
-            // ZUC 是对称序列密码，加密解密运算相同。为提升 UX 提供了两个按钮。
         });
 
         ui.label("输出结果 (Hex):");
@@ -776,7 +811,7 @@ impl GmApp {
 
     fn process_zuc(&mut self) {
         let (key_len, iv_len) = if self.zuc_state.use_256 {
-            (32, 23)
+            if self.zuc_state.use_new_init { (32, 16) } else { (32, 23) }
         } else {
             (16, 16)
         };
@@ -815,11 +850,28 @@ impl GmApp {
 
         if self.zuc_state.use_256 {
             // ZUC-256
-            let key_arr = GenericArray::from_slice(&key_bytes);
-            let iv_arr = GenericArray::from_slice(&iv_bytes);
-
-            let mut cipher = Zuc256StreamCipher::new(key_arr, iv_arr);
-            cipher.apply_keystream(&mut data_bytes);
+            if self.zuc_state.use_new_init {
+                // New Initialization Scheme (128-bit IV)
+                if self.zuc_state.is_mac {
+                    let mode = match self.zuc_state.mac_len {
+                        MacLen::L32 => Zuc256Mode::Mac32,
+                        MacLen::L64 => Zuc256Mode::Mac64,
+                        MacLen::L128 => Zuc256Mode::Mac128,
+                    };
+                    let mut cipher = Zuc256NewStreamCipher::new(&key_bytes, &iv_bytes, mode);
+                    let tag = cipher.generate_mac(&data_bytes, data_bytes.len() * 8, self.zuc_state.mac_len as usize);
+                    self.zuc_state.output = hex::encode(tag);
+                    return;
+                }
+                
+                let mut cipher = Zuc256NewStreamCipher::new(&key_bytes, &iv_bytes, Zuc256Mode::Encrypt);
+                cipher.apply_keystream(&mut data_bytes);
+            } else {
+                let key_arr = GenericArray::from_slice(&key_bytes);
+                let iv_arr = GenericArray::from_slice(&iv_bytes);
+                let mut cipher = Zuc256StreamCipher::new(key_arr, iv_arr);
+                cipher.apply_keystream(&mut data_bytes);
+            }
         } else {
             // ZUC-128 implementation usage
             let mut key_arr = [0u8; 16];
